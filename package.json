@@ -1,0 +1,12 @@
+{
+  "name": "mps-tetris",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "npm --prefix webapp run dev",
+    "build": "npm --prefix webapp run build",
+    "bot": "node bot/tetris-bot.js",
+    "preview": "npm --prefix webapp run preview"
+  }
+}

@@ -1,0 +1,403 @@
+import { computed, reactive } from 'vue';
+import { BubbleWebApp } from '../../../jeejio-bubble/sdk/WebApp.js';
+import { BleAppClient } from '../../../jeejio-bubble/sdk/BleAppClient.js';
+import { t } from './i18n';
+
+export type DeviceInfo = {
+  name?: string;
+  talId?: string;
+  deviceTalId?: string;
+  slot?: string | number;
+  slotId?: string;
+  deviceId?: string;
+  raw?: unknown;
+};
+
+type DeviceEventItem = {
+  method?: string;
+  name?: string;
+  params?: { value?: unknown };
+};
+
+type DeviceEventPayload = {
+  payload?: {
+    device?: DeviceInfo;
+    events?: DeviceEventItem[];
+  };
+};
+
+export type TetrisCommand = 'START' | 'LEFT' | 'RIGHT' | 'DOWN' | 'ROTATE' | 'DROP' | 'PAUSE' | 'RESTART' | 'SOUND';
+export type LaunchPhase = 'idle' | 'requesting' | 'preparing' | 'switching' | 'ready' | 'failed';
+
+const state = reactive({
+  connection: 'idle',
+  message: '',
+  launchPhase: 'idle' as LaunchPhase,
+  lines: 0,
+  gameState: 'playing',
+  soundEnabled: true,
+});
+const hasBridge = () => Boolean((globalThis as { JeeWeb?: unknown }).JeeWeb);
+const webApp = new BubbleWebApp({ debug: import.meta.env.DEV, timeoutMillis: 20000 });
+let client: BleAppClient | null = null;
+let device: DeviceInfo | null = null;
+let mpsEventsBound = false;
+let lastInstallErrorCode = '';
+let pendingLaunch: {
+  deviceKey: string;
+  resolve: () => void;
+  reject: (error: Error) => void;
+  timer: ReturnType<typeof setTimeout>;
+} | null = null;
+const lastMpsEventByDevice = new Map<string, string>();
+const lastMpsErrorByDevice = new Map<string, string>();
+
+const MPS_OPEN_TIMEOUT_MS = 45000;
+const READY_EVENTS = new Set(['MPS_IS_RUNNING']);
+const FAILED_EVENTS = new Set(['INSTALL_FAIL', 'RUNNING_FAIL']);
+
+function protocolClient() {
+  if (!client) {
+    client = new BleAppClient(webApp.ble, {
+      appId: 'Tetris',
+      appVersion: '1.0.0',
+      timeoutMillis: 9000,
+      connectTimeoutMillis: 20000,
+      readyGraceMillis: 8000,
+      retries: 1,
+      heartbeatMillis: -1,
+    } as Record<string, unknown>);
+    client.on('connectionState', (event) => {
+      state.connection = String(event?.connection || 'unknown');
+      state.message = String(event?.message || event?.lastError || '');
+    });
+    client.on('data', (event) => applyMessage(event?.message));
+  }
+  return client;
+}
+
+export function useTetrisDevice() {
+  const ready = computed(() => state.connection === 'ready' || !hasBridge());
+  const connecting = computed(() => state.connection === 'connecting');
+
+  async function openOnDevice() {
+    state.launchPhase = 'requesting';
+    state.message = t('status.findingDevice');
+    try {
+      device = await loadDevice();
+      if (!device) throw new Error(t('status.deviceMissing'));
+      await openMpsApp(device);
+      state.launchPhase = 'ready';
+      state.message = t('status.launchReady');
+
+    } catch (error) {
+      state.launchPhase = 'failed';
+      state.message = errorMessage(error);
+      throw error;
+    }
+  }
+
+  async function connectDevice() {
+    if (!device) return;
+    if (!hasBridge()) {
+      state.connection = 'ready';
+      state.message = t('status.mockConnected');
+      return;
+    }
+
+    state.connection = 'connecting';
+    state.message = t('status.connectingBle');
+    try {
+      await protocolClient().ensureConnected(device, {
+        connectingMessage: 'Connecting BLE...',
+        connectTimeoutMillis: 20000,
+        readyGraceMillis: 8000,
+        sendTimeoutMillis: 9000,
+      });
+      state.connection = 'ready';
+      state.message = t('status.bleConnected');
+      await syncState();
+    } catch (error) {
+      state.connection = 'failed';
+      state.message = t('status.bleConnectFailed', { error: errorMessage(error) });
+    }
+  }
+
+  async function reconnect() {
+    if (!device || !hasBridge() || connecting.value) return;
+    state.connection = 'connecting';
+    state.message = 'Connecting BLE...';
+    try {
+      await protocolClient().reconnect({
+        connectingMessage: 'Connecting BLE...',
+        connectTimeoutMillis: 20000,
+        readyGraceMillis: 8000,
+        sendTimeoutMillis: 9000,
+      });
+      state.connection = 'ready';
+      state.message = 'BLE connected.';
+      await syncState();
+    } catch (error) {
+      state.connection = 'failed';
+      state.message = errorMessage(error);
+    }
+  }
+
+  async function send(command: TetrisCommand) {
+    if (!device || !ready.value) return false;
+    if (!hasBridge()) {
+      if (command === 'RESTART') state.lines = 0;
+      if (command === 'SOUND') state.soundEnabled = !state.soundEnabled;
+      return true;
+    }
+    if (command === 'START' || command === 'SOUND') {
+      const response = await protocolClient().send(device, {
+        method: command,
+        id: `tetris_${command.toLowerCase()}_${Date.now()}`,
+      }, { priority: 0, timeoutMillis: 2500 });
+      applyMessage(responsePayload(response));
+      return true;
+    }
+    await protocolClient().sendRealtime(command, {}, {
+      device,
+      ttlMillis: 260,
+      writeType: 'withoutResponse',
+      timeoutMillis: 600,
+    });
+    return true;
+  }
+
+  async function syncState() {
+    if (!device || !hasBridge()) return;
+    const response = await protocolClient().send(device, {
+      method: 'tetrisGetState',
+      id: `tetris_state_${Date.now()}`,
+    }, { priority: 1, timeoutMillis: 2500 });
+    applyMessage(responsePayload(response));
+  }
+
+  return { state, ready, connecting, openOnDevice, connectDevice, reconnect, send };
+}
+
+async function openMpsApp(target: DeviceInfo) {
+  const config = launchConfig();
+  if (!config.id || !config.version) {
+    throw new Error(t('status.missingConfig'));
+  }
+
+  state.launchPhase = 'requesting';
+  state.message = t('status.launching');
+  const key = deviceKey(target);
+  lastMpsEventByDevice.delete(key);
+  lastMpsErrorByDevice.delete(key);
+  if (!hasBridge()) {
+    state.launchPhase = 'ready';
+    return;
+  }
+
+  bindMpsEvents();
+  lastInstallErrorCode = '';
+  await webApp.subscribeDeviceEvents(target);
+  const ready = waitForMpsRunning(target);
+
+  let response: unknown;
+  try {
+    response = await webApp.callDevice(target, {
+      method: 'talMpyExecOneScript',
+      params: { id: config.id, version: config.version },
+    });
+  } catch (error) {
+    clearPendingLaunch();
+    throw error;
+  }
+
+  const code = mpyExecReturnCode(response);
+  if (code === 264) {
+    clearPendingLaunch();
+    state.launchPhase = 'ready';
+    return;
+  }
+  if (code === 263 || code === 265) {
+    state.launchPhase = 'switching';
+    state.message = t('status.switching');
+  } else if (code === 260 || code === 261 || code === 262) {
+    state.launchPhase = 'preparing';
+    state.message = t('status.preparing');
+  } else {
+    clearPendingLaunch();
+    state.launchPhase = 'failed';
+    throw new Error(t('status.openFailed', { code: Number.isFinite(code) ? code : 'unknown' }));
+  }
+
+  try {
+    await ready;
+    state.launchPhase = 'ready';
+  } catch (error) {
+    state.launchPhase = 'failed';
+    throw error;
+  }
+}
+
+function bindMpsEvents() {
+  if (mpsEventsBound) return;
+  webApp.onDeviceEvent(handleDeviceEvent);
+  mpsEventsBound = true;
+}
+
+function waitForMpsRunning(target: DeviceInfo) {
+  const key = deviceKey(target);
+  const lastEvent = lastMpsEventByDevice.get(key);
+  if (lastEvent && READY_EVENTS.has(lastEvent)) return Promise.resolve();
+  if (lastEvent && FAILED_EVENTS.has(lastEvent)) {
+    return Promise.reject(launchErrorForFailedEvent(lastEvent, key));
+  }
+
+  clearPendingLaunch();
+  return new Promise<void>((resolve, reject) => {
+    const timer = window.setTimeout(() => {
+      if (pendingLaunch?.deviceKey === key) pendingLaunch = null;
+      reject(new Error(t('status.launchTimeout')));
+    }, MPS_OPEN_TIMEOUT_MS);
+    pendingLaunch = { deviceKey: key, resolve, reject, timer };
+  });
+}
+
+function handleDeviceEvent(raw: unknown) {
+  const event = raw as DeviceEventPayload;
+  const sourceDevice = event.payload?.device;
+  const key = sourceDevice ? deviceKey(sourceDevice) : '';
+  const items = event.payload?.events || [];
+  const batchError = items
+    .filter((item) => (item.method || item.name) === 'mpyVmError')
+    .map((item) => parseInstallErrorCode(String(item.params?.value || '')))
+    .find(Boolean);
+  if (batchError) {
+    lastInstallErrorCode = batchError;
+    if (key) lastMpsErrorByDevice.set(key, batchError);
+  }
+
+  for (const item of items) {
+    const name = item.method || item.name;
+    const value = String(item.params?.value || '');
+
+    if (name === 'mpyVmError') {
+      const code = parseInstallErrorCode(value) || 'unknown';
+      lastInstallErrorCode = code;
+      if (key) lastMpsErrorByDevice.set(key, code);
+      rejectPending(new Error(t('status.installFailed', { code })), key);
+      continue;
+    }
+    if (name !== 'mpyVmEvent' || !value) continue;
+    if (key) lastMpsEventByDevice.set(key, value);
+    if (pendingLaunch && key && pendingLaunch.deviceKey !== key) continue;
+
+    if (value === 'INSTALL_START' || value === 'INSTALL_SUCCESS') {
+      state.launchPhase = 'preparing';
+      state.message = t('status.preparing');
+    } else if (READY_EVENTS.has(value)) {
+      resolvePending(key);
+    } else if (FAILED_EVENTS.has(value)) {
+      rejectPending(launchErrorForFailedEvent(value, key), key);
+    }
+  }
+}
+
+function resolvePending(key = '') {
+  if (!pendingLaunch) return;
+  if (key && pendingLaunch.deviceKey !== key) return;
+  const pending = pendingLaunch;
+  pendingLaunch = null;
+  window.clearTimeout(pending.timer);
+  pending.resolve();
+}
+
+function rejectPending(error: Error, key = '') {
+  if (!pendingLaunch) return;
+  if (key && pendingLaunch.deviceKey !== key) return;
+  const pending = pendingLaunch;
+  pendingLaunch = null;
+  window.clearTimeout(pending.timer);
+  pending.reject(error);
+}
+
+function clearPendingLaunch() {
+  if (!pendingLaunch) return;
+  window.clearTimeout(pendingLaunch.timer);
+  pendingLaunch = null;
+}
+
+function parseInstallErrorCode(value: string) {
+  return value.match(/INSTALL_ERROR:([-+]?\d+)/)?.[1] || '';
+}
+
+function launchErrorForFailedEvent(value: string, key: string) {
+  if (value === 'RUNNING_FAIL') {
+    return new Error(t('status.runningFailed'));
+  }
+  const code = (key && lastMpsErrorByDevice.get(key)) || lastInstallErrorCode || 'unknown';
+  return new Error(t('status.mpsInstallFailed', { code }));
+}
+
+function mpyExecReturnCode(response: unknown) {
+  const data = response as { code?: unknown; result?: unknown; value?: unknown };
+  const result = data?.result as { value?: unknown } | number | string | undefined;
+  const value = typeof result === 'object' && result !== null ? result.value : result ?? data?.value;
+  const code = Number(value);
+  return Number.isFinite(code) ? code : Number(data?.code);
+}
+
+async function loadDevice(): Promise<DeviceInfo | null> {
+  if (!hasBridge()) return { name: 'PixelMugS1 Mock', talId: 'PixelMugS1', slotId: 'mock' };
+  const lookup = webApp as BubbleWebApp & {
+    getDevice?: (options?: Record<string, unknown>) => Promise<unknown>;
+  };
+  if (typeof lookup.getDevice === 'function') {
+    const value = await lookup.getDevice({ talId: 'PixelMugS1' }) as any;
+    const found = (value?.result || value?.device || value) as DeviceInfo;
+    if (found && (found.talId || found.deviceTalId) === 'PixelMugS1') return found;
+  }
+  const devices = await webApp.getDevices() as DeviceInfo[];
+  return devices.find((item) => (item.talId || item.deviceTalId) === 'PixelMugS1') || null;
+}
+
+function launchConfig() {
+  const params = new URLSearchParams(location.search);
+  return {
+    id: cleanLaunchParam(params.get('mps_id'), import.meta.env.VITE_MPS_ID || ''),
+    version: cleanLaunchParam(params.get('mps_version'), import.meta.env.VITE_MPS_VERSION || '1.0.0'),
+  };
+}
+
+function cleanLaunchParam(value: string | null, fallback: string) {
+  const trimmed = String(value || '').trim();
+  if (!trimmed || trimmed === 'null' || trimmed === 'undefined') return fallback;
+  return trimmed;
+}
+
+function deviceKey(target: DeviceInfo) {
+  const raw = target.raw as { slot?: { id?: string | number }; device?: { id?: string | number } } | undefined;
+  return String(
+    target.deviceId
+      || raw?.device?.id
+      || target.slotId
+      || raw?.slot?.id
+      || `${target.talId || 'device'}:${target.slot || ''}`,
+  );
+}
+
+function applyMessage(raw: unknown) {
+  const message = raw as { state?: string; lines?: number; soundEnabled?: boolean } | undefined;
+  if (!message) return;
+  if (message.state) state.gameState = message.state;
+  if (typeof message.lines === 'number') state.lines = Math.max(0, Math.floor(message.lines));
+  if (typeof message.soundEnabled === 'boolean') state.soundEnabled = message.soundEnabled;
+}
+
+function responsePayload(response: unknown) {
+  const item = response as any;
+  return item?.result?.result || item?.result?.message || item?.message || item?.result || response;
+}
+
+function errorMessage(error: unknown) {
+  return error instanceof Error ? error.message : String(error || t('status.unknownError'));
+}
