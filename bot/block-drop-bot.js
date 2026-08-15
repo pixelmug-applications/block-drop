@@ -15,22 +15,22 @@ const shouldServeStatic = !process.env.WEBAPP_URL;
 
 const messages = {
   "zh-CN": {
-    bindContent: "绑定 PixelMug 后即可运行俄罗斯方块。",
+    bindContent: "绑定 PixelMug 后即可运行方块掉落。",
     bindButton: "绑定 PixelMug",
-    openButton: "打开俄罗斯方块",
-    intro: "**俄罗斯方块**\n\n在 PixelMug 上玩复古彩色俄罗斯方块，使用手机手柄移动、旋转和掉落方块。\n\n点击下方按钮开始游戏。",
-    commands: "命令：/bindDevice，/tetris",
+    openButton: "打开方块掉落",
+    intro: "**方块掉落**\n\n在 PixelMug 上玩复古彩色方块掉落游戏，使用手机手柄移动、旋转和掉落方块。\n\n点击下方按钮开始游戏。",
+    commands: "命令：/bindDevice，/blockDrop",
     commandBind: "绑定 PixelMug",
-    commandTetris: "打开俄罗斯方块",
+    commandBlockDrop: "打开方块掉落",
   },
   "en-US": {
-    bindContent: "Bind a PixelMug before running Tetris.",
+    bindContent: "Bind a PixelMug before running Block Drop.",
     bindButton: "Bind PixelMug",
-    openButton: "Open Tetris",
-    intro: "**Tetris**\n\nPlay colorful retro Tetris on PixelMug. Move, rotate, and drop blocks with the phone controller.\n\nTap the button below to start.",
-    commands: "Commands: /bindDevice, /tetris",
+    openButton: "Open Block Drop",
+    intro: "**Block Drop**\n\nPlay colorful retro Block Drop on PixelMug. Move, rotate, and drop blocks with the phone controller.\n\nTap the button below to start.",
+    commands: "Commands: /bindDevice, /blockDrop",
     commandBind: "Bind PixelMug",
-    commandTetris: "Open Tetris",
+    commandBlockDrop: "Open Block Drop",
   },
 };
 
@@ -43,7 +43,7 @@ const bot = new BubbleBot(token, {
 });
 
 bot.registerDevices([pixelMug]);
-bot.on("error", async (ctx) => console.error("[tetris-bot]", ctx.error || ctx));
+bot.on("error", async (ctx) => console.error("[block-drop-bot]", ctx.error || ctx));
 
 bot.on("message", async (ctx) => {
   const language = localeFromContext(ctx);
@@ -55,7 +55,7 @@ bot.on("message", async (ctx) => {
     });
     return;
   }
-  if (command === "/tetris" || command === "/webapp" || command === "/start") {
+  if (command === "/blockDrop" || command === "/webapp" || command === "/start") {
     const keyboard = new InlineKeyboard().url(text(language, "openButton"), withLocale(webAppUrl, language));
     await ctx.sendKeyboard(text(language, "intro"), keyboard, {
       mentionOnly: ctx.chat?.type === "group" ? true : undefined,
@@ -77,16 +77,16 @@ await bot.setCommands([
     },
   },
   {
-    command: "tetris",
-    description: messages["en-US"].commandTetris,
+    command: "blockDrop",
+    description: messages["en-US"].commandBlockDrop,
     descTranslations: {
-      "zh-CN": messages["zh-CN"].commandTetris,
-      en: messages["en-US"].commandTetris,
+      "zh-CN": messages["zh-CN"].commandBlockDrop,
+      en: messages["en-US"].commandBlockDrop,
     },
   },
 ]);
 await bot.start();
-console.log("mps-tetris bot is running.");
+console.log("mps-block-drop bot is running.");
 console.log(`WebApp URL: ${webAppUrl}`);
 
 function extractCommand(value) {

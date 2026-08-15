@@ -24,7 +24,7 @@ button { border: 0; color: inherit; font: inherit; -webkit-tap-highlight-color: 
   text-align: center;
 }
 .landing-content { display: grid; justify-items: center; margin-bottom: 120px; }
-.landing h1 { margin: 12px 0 0; color: #283bd7; font: 900 clamp(48px, 12vw, 96px)/.9 Arial Black, sans-serif; letter-spacing: .08em; text-shadow: 5px 5px 0 #fff; }
+.landing h1 { margin: 12px 0 0; color: #283bd7; font: 900 clamp(38px, 8vw, 72px)/.9 Arial Black, sans-serif; letter-spacing: .05em; text-shadow: 5px 5px 0 #fff; white-space: nowrap; }
 .landing p { margin: 25px 0 18px; font-weight: 700; }
 .landing-actions { position: absolute; right: 24px; bottom: max(28px, env(safe-area-inset-bottom)); left: 24px; display: grid; justify-items: center; gap: 14px; }
 .landing button { width: min(420px, 100%); min-height: 58px; padding: 14px 24px; border: 2px solid #101010; border-radius: 40px; background: radial-gradient(circle at 37% 25%, #7d8cff, #5965e6 55%, #343db0); color: white; box-shadow: 0 7px 0 #202779, 0 10px 18px #8c760f; cursor: pointer; }

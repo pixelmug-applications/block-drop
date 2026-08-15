@@ -80,9 +80,9 @@ def ticks_diff(a, b):
     return time.ticks_diff(a, b)
 
 
-class TetrisApp:
+class BlockDropApp:
     def __init__(self):
-        self.ble = BleAppService("Tetris", app_version="1.0.0", max_message=384)
+        self.ble = BleAppService("BlockDrop", app_version="1.0.0", max_message=384)
         self.sound_enabled = True
         self._register_ble_protocol()
         self.audio = audio_service.audio
@@ -91,7 +91,7 @@ class TetrisApp:
             audio=self.audio,
             asset_root="assets",
             debug=False,
-            log_prefix="[TetrisSound]",
+            log_prefix="[BlockDropSound]",
             packets_per_update=SOUND_PACKETS_PER_UPDATE,
             stop_handler=self.stop_sound,
         )
@@ -126,8 +126,8 @@ class TetrisApp:
             self.ble.command(command, self._command_handler(command), priority=0, mutates=False)
         self.ble.command("SOUND", self._command_handler("SOUND"), priority=0, mutates=False)
         self.ble.realtime("control", self._handle_realtime_control)
-        self.ble.command("tetrisControl", self._cmd_control, priority=0, mutates=False)
-        self.ble.command("tetrisGetState", self._cmd_get_state, priority=1, mutates=False)
+        self.ble.command("blockDropControl", self._cmd_control, priority=0, mutates=False)
+        self.ble.command("blockDropGetState", self._cmd_get_state, priority=1, mutates=False)
         self.ble.command("getState", self._cmd_get_state, priority=1, mutates=False)
         self.ble.set_state_provider(self.state_payload)
 
@@ -164,7 +164,7 @@ class TetrisApp:
         self.start_page_started_ms = self.last_drop_ms
         if start:
             self.spawn_piece()
-        self.publish_state("tetrisRestarted" if start else "tetrisReady")
+        self.publish_state("blockDropRestarted" if start else "blockDropReady")
 
     def start_game(self):
         if self.state != STATE_READY:
@@ -172,7 +172,7 @@ class TetrisApp:
         self.state = STATE_PLAYING
         self.last_drop_ms = ticks_ms()
         self.spawn_piece()
-        self.publish_state("tetrisStarted")
+        self.publish_state("blockDropStarted")
 
     def spawn_piece(self):
         kind = self.next_kind
@@ -181,7 +181,7 @@ class TetrisApp:
         if self.collides(self.piece["x"], self.piece["y"], 0):
             self.state = STATE_GAME_OVER
             self.piece = None
-            self.publish_state("tetrisGameOver")
+            self.publish_state("blockDropGameOver")
 
     def cells(self, rotation=None):
         rotations = SHAPES[self.piece["kind"]]
@@ -228,7 +228,7 @@ class TetrisApp:
         if above_top:
             self.state = STATE_GAME_OVER
             self.piece = None
-            self.publish_state("tetrisGameOver")
+            self.publish_state("blockDropGameOver")
             return
         self.clearing_rows = [y for y in range(BOARD_H) if all(self.board[y])]
         if self.clearing_rows:
@@ -246,7 +246,7 @@ class TetrisApp:
         self.clearing_rows = []
         self.lines += cleared
         self.last_drop_ms = ticks_ms()
-        self.publish_state("tetrisLineClear")
+        self.publish_state("blockDropLineClear")
         self.spawn_piece()
 
     def hard_drop(self):
@@ -260,7 +260,7 @@ class TetrisApp:
             self.sound_enabled = not self.sound_enabled
             if not self.sound_enabled:
                 self.stop_sound()
-            self.publish_state("tetrisSoundChanged")
+            self.publish_state("blockDropSoundChanged")
             return
         if command == "START":
             self.start_game()
@@ -273,7 +273,7 @@ class TetrisApp:
             self.last_drop_ms = ticks_ms()
             if self.state == STATE_PLAYING and self.clearing_rows:
                 self.line_flash_started_ms = self.last_drop_ms
-            self.publish_state("tetrisResumed" if self.state == STATE_PLAYING else "tetrisPaused")
+            self.publish_state("blockDropResumed" if self.state == STATE_PLAYING else "blockDropPaused")
             return
         if self.state != STATE_PLAYING:
             return
@@ -322,7 +322,8 @@ class TetrisApp:
             self.draw_start_page()
             return
         if self.state == STATE_GAME_OVER:
-            self.draw_centered_text(5, "OVER", COL_RED)
+            self.draw_centered_text(2, "OVER", COL_RED)
+            self.draw_centered_text(9, str(min(999, self.lines)), COL_WHITE)
             return
         self.draw_walls()
         for y in range(BOARD_H):
@@ -349,7 +350,8 @@ class TetrisApp:
             self.draw_pause_overlay()
 
     def draw_start_page(self):
-        self.draw_centered_text(2, "Tetris", COL_YELLOW)
+        self.draw_centered_text(0, "BLOCK", COL_YELLOW)
+        self.draw_centered_text(6, "DROP", COL_YELLOW)
         phase = max(0, ticks_diff(ticks_ms(), self.start_page_started_ms)) // START_BLOCK_MS
         kind = phase % len(SHAPES)
         cells = SHAPES[kind][0]
@@ -357,7 +359,7 @@ class TetrisApp:
         width = max_x - min_x + 1
         height = max_y - min_y + 1
         origin_x = (SCR_W - width) // 2 - min_x
-        origin_y = 8 + (4 - height) // 2 - min_y
+        origin_y = 12 + (4 - height) // 2 - min_y
         self.draw_shape(cells, origin_x, origin_y, PIECE_COLORS[kind])
 
     def draw_walls(self):
@@ -367,18 +369,14 @@ class TetrisApp:
             pyxel.pset(RIGHT_WALL_X, y, color)
 
     def draw_next_piece(self):
-        cells = self.preview_cells(self.next_kind)
+        # Preview the exact spawn orientation.  Choosing a narrower rotated
+        # variant here makes the preview look like a different upcoming block.
+        cells = SHAPES[self.next_kind][0]
         min_x, max_x, min_y, max_y = self.cell_bounds(cells)
-        origin_x = PREVIEW_CONTENT_X - min_x
+        width = max_x - min_x + 1
+        origin_x = PREVIEW_X + (PREVIEW_W - width) // 2 - min_x
         origin_y = -min_y
         self.draw_shape(cells, origin_x, origin_y, PIECE_COLORS[self.next_kind])
-
-    def preview_cells(self, kind):
-        for cells in SHAPES[kind]:
-            min_x, max_x, _, _ = self.cell_bounds(cells)
-            if max_x - min_x + 1 <= 2:
-                return cells
-        return SHAPES[kind][0]
 
     def cell_bounds(self, cells):
         min_x = min(cell[0] for cell in cells)
@@ -421,7 +419,7 @@ class TetrisApp:
         ok = True
         for path in (DROP_SOUND, MOVE_SOUND, ROTATE_SOUND):
             if not self.sound.preload(path):
-                print("[Tetris] preload sound failed:", path, self.sound.last_error)
+                print("[BlockDrop] preload sound failed:", path, self.sound.last_error)
                 ok = False
         return ok
 
@@ -432,7 +430,7 @@ class TetrisApp:
             return False
         ok = self.sound.play(path, interrupt=interrupt)
         if not ok:
-            print("[Tetris] sound failed:", path, self.sound.last_error)
+            print("[BlockDrop] sound failed:", path, self.sound.last_error)
         return ok
 
     def stop_sound(self, player=None):
@@ -454,7 +452,7 @@ class TetrisApp:
             self.audio_initialized = True
             return True
         except Exception as exc:
-            print("[Tetris] audio init failed:", exc)
+            print("[BlockDrop] audio init failed:", exc)
             return False
 
     def state_payload(self):
@@ -473,7 +471,7 @@ class TetrisApp:
 
 
 def appMain():
-    TetrisApp().start()
+    BlockDropApp().start()
 
 
 if __name__ == "__main__":

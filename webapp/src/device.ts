@@ -26,7 +26,7 @@ type DeviceEventPayload = {
   };
 };
 
-export type TetrisCommand = 'START' | 'LEFT' | 'RIGHT' | 'DOWN' | 'ROTATE' | 'DROP' | 'PAUSE' | 'RESTART' | 'SOUND';
+export type BlockDropCommand = 'START' | 'LEFT' | 'RIGHT' | 'DOWN' | 'ROTATE' | 'DROP' | 'PAUSE' | 'RESTART' | 'SOUND';
 export type LaunchPhase = 'idle' | 'requesting' | 'preparing' | 'switching' | 'ready' | 'failed';
 
 const state = reactive({
@@ -59,7 +59,7 @@ const FAILED_EVENTS = new Set(['INSTALL_FAIL', 'RUNNING_FAIL']);
 function protocolClient() {
   if (!client) {
     client = new BleAppClient(webApp.ble, {
-      appId: 'Tetris',
+      appId: 'BlockDrop',
       appVersion: '1.0.0',
       timeoutMillis: 9000,
       connectTimeoutMillis: 20000,
@@ -76,7 +76,7 @@ function protocolClient() {
   return client;
 }
 
-export function useTetrisDevice() {
+export function useBlockDropDevice() {
   const ready = computed(() => state.connection === 'ready' || !hasBridge());
   const connecting = computed(() => state.connection === 'connecting');
 
@@ -143,7 +143,7 @@ export function useTetrisDevice() {
     }
   }
 
-  async function send(command: TetrisCommand) {
+  async function send(command: BlockDropCommand) {
     if (!device || !ready.value) return false;
     if (!hasBridge()) {
       if (command === 'RESTART') state.lines = 0;
@@ -153,7 +153,7 @@ export function useTetrisDevice() {
     if (command === 'START' || command === 'SOUND') {
       const response = await protocolClient().send(device, {
         method: command,
-        id: `tetris_${command.toLowerCase()}_${Date.now()}`,
+        id: `block_drop_${command.toLowerCase()}_${Date.now()}`,
       }, { priority: 0, timeoutMillis: 2500 });
       applyMessage(responsePayload(response));
       return true;
@@ -170,8 +170,8 @@ export function useTetrisDevice() {
   async function syncState() {
     if (!device || !hasBridge()) return;
     const response = await protocolClient().send(device, {
-      method: 'tetrisGetState',
-      id: `tetris_state_${Date.now()}`,
+      method: 'blockDropGetState',
+      id: `block_drop_state_${Date.now()}`,
     }, { priority: 1, timeoutMillis: 2500 });
     applyMessage(responsePayload(response));
   }

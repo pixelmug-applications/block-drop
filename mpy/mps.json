@@ -1,7 +1,7 @@
 {
-  "name": "tetris",
-  "version": "1.0.0",
-  "description": "A colorful 10x16 Tetris game controlled by a BLE WebApp gamepad.",
+  "name": "block-drop",
+  "version": "1.0.1",
+  "description": "A colorful 10x16 Block Drop game controlled by a BLE WebApp gamepad.",
   "author": "",
   "category": "Game",
   "dependencies": [

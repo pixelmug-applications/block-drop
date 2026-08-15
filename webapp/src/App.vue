@@ -1,14 +1,14 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref, watch } from 'vue';
-import { useTetrisDevice, type TetrisCommand } from './device';
+import { useBlockDropDevice, type BlockDropCommand } from './device';
 import { t } from './i18n';
 
-const game = useTetrisDevice();
+const game = useBlockDropDevice();
 const entered = ref(false);
 const prepared = ref(false);
 const busy = ref(false);
 const error = ref('');
-const pressed = ref<TetrisCommand | ''>('');
+const pressed = ref<BlockDropCommand | ''>('');
 let repeatTimer: number | undefined;
 let bleCountdownTimer: number | undefined;
 const bleSeconds = ref(20);
@@ -40,7 +40,7 @@ async function openGame() {
   }
 }
 
-function tap(command: TetrisCommand) {
+function tap(command: BlockDropCommand) {
   pressed.value = command;
   void game.send(command);
   window.setTimeout(() => { if (pressed.value === command) pressed.value = ''; }, 100);
@@ -87,7 +87,7 @@ onBeforeUnmount(() => {
   <main v-if="!entered" class="landing" :class="{ ready: prepared }">
     <section class="landing-content">
       <div class="tetromino" aria-hidden="true"><i /><i /><i /><i /></div>
-      <h1>TETRIS</h1>
+      <h1>BLOCK DROP</h1>
       <p>{{ t('landing.subtitle') }}</p>
     </section>
     <section class="landing-actions">
