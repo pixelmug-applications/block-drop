@@ -1,6 +1,6 @@
 import { computed, reactive } from 'vue';
-import { BubbleWebApp } from '../../../jeejio-bubble/sdk/WebApp.js';
-import { BleAppClient } from '../../../jeejio-bubble/sdk/BleAppClient.js';
+import { BubbleWebApp } from '@jeejio-bubble/bot/sdk/WebApp.js';
+import { BleAppClient } from '@jeejio-bubble/bot/sdk/BleAppClient.js';
 import { t } from './i18n';
 
 export type DeviceInfo = {
@@ -60,7 +60,7 @@ function protocolClient() {
   if (!client) {
     client = new BleAppClient(webApp.ble, {
       appId: 'BlockDrop',
-      appVersion: '1.0.0',
+      appVersion: '1.0.1',
       timeoutMillis: 9000,
       connectTimeoutMillis: 20000,
       readyGraceMillis: 8000,
@@ -364,7 +364,7 @@ function launchConfig() {
   const params = new URLSearchParams(location.search);
   return {
     id: cleanLaunchParam(params.get('mps_id'), import.meta.env.VITE_MPS_ID || ''),
-    version: cleanLaunchParam(params.get('mps_version'), import.meta.env.VITE_MPS_VERSION || '1.0.0'),
+    version: cleanLaunchParam(params.get('mps_version'), import.meta.env.VITE_MPS_VERSION || '1.0.1'),
   };
 }
 

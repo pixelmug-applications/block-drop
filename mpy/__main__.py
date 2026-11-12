@@ -82,7 +82,7 @@ def ticks_diff(a, b):
 
 class BlockDropApp:
     def __init__(self):
-        self.ble = BleAppService("BlockDrop", app_version="1.0.0", max_message=384)
+        self.ble = BleAppService("BlockDrop", app_version="1.0.1", max_message=384)
         self.sound_enabled = True
         self._register_ble_protocol()
         self.audio = audio_service.audio

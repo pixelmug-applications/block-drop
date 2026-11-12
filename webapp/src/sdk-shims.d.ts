@@ -1,4 +1,4 @@
-declare module '../../../jeejio-bubble/sdk/WebApp.js' {
+declare module '@jeejio-bubble/bot/sdk/WebApp.js' {
   export class BubbleWebApp {
     constructor(options?: Record<string, unknown>);
     ble?: unknown;
@@ -10,7 +10,7 @@ declare module '../../../jeejio-bubble/sdk/WebApp.js' {
   }
 }
 
-declare module '../../../jeejio-bubble/sdk/BleAppClient.js' {
+declare module '@jeejio-bubble/bot/sdk/BleAppClient.js' {
   export class BleAppClient {
     constructor(bridge: unknown, options?: Record<string, unknown>);
     state: { connection: string; message?: string; lastError?: string };

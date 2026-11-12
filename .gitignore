@@ -3,6 +3,7 @@ node_modules/
 webapp/node_modules/
 
 # Build outputs
+debug/
 dist/
 webapp/dist/
 mpy/dist/

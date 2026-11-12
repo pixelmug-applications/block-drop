@@ -1,17 +1,33 @@
-# Block Drop
+﻿# Block Drop
 
-PixelMug 上的 10×16 彩色方块掉落游戏，由横屏 WebApp 手柄通过 BLE 控制。
+Block Drop is a PixelMug Studio application with a MicroPython game runtime and a Vue WebApp controller. The WebApp uses BLE to send movement, rotation, drop, pause, restart, and sound commands to the device.
 
-## 控制协议
+## Project layout
 
-WebApp 通过 BLE 实时通道发送：`LEFT`、`RIGHT`、`DOWN`、`ROTATE`、`DROP`、`PAUSE`、`RESTART`。声音按钮暂时禁用。
+```text
+block-drop/
+  bot/        Bot integration
+  mpy/        MicroPython game and sound assets
+  webapp/     Vue WebApp controller
+```
 
-MPY 同时提供 `blockDropControl`、`blockDropGetState` 和 `getState` 命令用于调试。
+## Development
 
-## 运行
+Install both dependency sets from the project root:
 
-在 `bot/config.dev.js` 中配置 bot token、API 地址、MPS ID 和版本，然后运行：
+```bash
+npm install
+npm --prefix webapp install
+```
 
-    npm --prefix webapp install
-    npm run build
-    npm run bot
+Build the WebApp:
+
+```bash
+npm run build
+```
+
+The Bot entry is `bot/index.js`. When opened in PixelMug Studio, Studio supplies `BOT_TOKEN`, `BOT_API_BASE_URL`, `STUDIO_WEBAPP_URL`, `STUDIO_MPS_ID`, and `STUDIO_MPS_VERSION`. Do not create a local `config.dev.js` or commit tokens.
+
+After binding a PixelMug, open Block Drop from the Bot. Studio installs and runs the MPY application when the WebApp requests it.
+
+The MPY manifest is `mpy/mps.json`. Device sound assets live under `mpy/assets/` and are uploaded with the MPY project using device-relative paths.

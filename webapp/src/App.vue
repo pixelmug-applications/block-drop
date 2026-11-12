@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, ref, watch } from 'vue';
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { useBlockDropDevice, type BlockDropCommand } from './device';
 import { t } from './i18n';
 
@@ -12,6 +12,7 @@ const pressed = ref<BlockDropCommand | ''>('');
 let repeatTimer: number | undefined;
 let bleCountdownTimer: number | undefined;
 const bleSeconds = ref(20);
+let opening = false;
 
 const bleLabel = computed(() => {
   if (game.ready.value) return t('ble.connected');
@@ -27,6 +28,8 @@ async function openGame() {
     entered.value = true;
     return;
   }
+  if (opening) return;
+  opening = true;
   busy.value = true;
   error.value = '';
   try {
@@ -37,8 +40,13 @@ async function openGame() {
     error.value = reason instanceof Error ? reason.message : String(reason);
   } finally {
     busy.value = false;
+    opening = false;
   }
 }
+
+onMounted(() => {
+  void openGame();
+});
 
 function tap(command: BlockDropCommand) {
   pressed.value = command;
